@@ -1,0 +1,32 @@
+{
+  "name": "@praxis/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@elevenlabs/react-native": "^1.2.12",
+    "@livekit/react-native": "~2.9.2",
+    "@livekit/react-native-webrtc": "~137.0.2",
+    "@praxis/shared-types": "workspace:*",
+    "expo": "~56.0.0",
+    "expo-build-properties": "~56.0.19",
+    "expo-constants": "~56.0.18",
+    "expo-dev-client": "~56.0.20",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.7",
+    "react-native": "0.86.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.1.1",
+    "typescript": "^5.6.3"
+  }
+}

@@ -17,6 +17,7 @@ import type { ChatMessage, ServerMessage } from "@praxis/shared-types";
 import { ElevenLabsClient } from "@praxis/voice-elevenlabs";
 import type { ServerEnv } from "./env.js";
 import { buildBrain, type BuiltBrain } from "./brain-factory.js";
+import { registerOpenAiRoute } from "./openai-route.js";
 
 export interface PraxisServer {
   app: FastifyInstance;
@@ -66,6 +67,9 @@ export async function createServer(env: ServerEnv): Promise<PraxisServer> {
       return reply.code(502).send({ error: "token mint failed" });
     }
   });
+
+  // OpenAI-compatible endpoint for the ElevenLabs Voice Engine custom-LLM path.
+  registerOpenAiRoute(app, built.brain, env.PRAXIS_AUTH_SECRET);
 
   /* ------------------------------- WS layer ------------------------------ */
 
