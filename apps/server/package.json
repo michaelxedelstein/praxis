@@ -1,0 +1,35 @@
+{
+  "name": "@praxis/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@praxis/bridge-adapter": "workspace:*",
+    "@praxis/core": "workspace:*",
+    "@praxis/shared-types": "workspace:*",
+    "@praxis/transport": "workspace:*",
+    "@praxis/voice-elevenlabs": "workspace:*",
+    "@slack/web-api": "^7.8.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
