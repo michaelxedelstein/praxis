@@ -1,0 +1,27 @@
+# Caddy auto-provisions and renews a Let's Encrypt cert for the subdomain and
+# reverse-proxies HTTPS/WSS to the brain. WebSocket upgrades are handled
+# transparently by Caddy's reverse_proxy — no special config needed.
+
+{
+	email {$PRAXIS_ACME_EMAIL}
+}
+
+{$PRAXIS_DOMAIN} {
+	encode zstd gzip
+
+	# Everything (HTTP routes + the /ws upgrade) proxies to the Node brain,
+	# which only listens on the internal compose network.
+	reverse_proxy praxis-server:8080
+
+	# Basic hardening headers.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,58 @@
+# Two services: the Node brain (bound to localhost only) and Caddy terminating
+# TLS in front of it. Single-user, locked down — not multi-tenant.
+services:
+  praxis-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # Local builds default to praxis-server:latest. The CI path sets PRAXIS_IMAGE
+    # to the GHCR tag so `docker compose pull` resolves to the pushed image.
+    image: ${PRAXIS_IMAGE:-praxis-server:latest}
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    # Expose the port ONLY on the loopback interface; Caddy reaches it over the
+    # internal compose network. Never published to the public interface.
+    expose:
+      - "8080"
+    networks:
+      - praxis
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - praxis-server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - praxis
+    environment:
+      # Caddy substitutes these from the root-owned .env (mode 600).
+      - PRAXIS_DOMAIN=${PRAXIS_DOMAIN}
+      - PRAXIS_ACME_EMAIL=${PRAXIS_ACME_EMAIL}
+
+networks:
+  praxis:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/out
+**/.turbo
+**/release
+**/dist-electron
+**/coverage
+**/.expo
+.git
+**/.env
+**/.env.*
+!**/.env.example
+*.log
