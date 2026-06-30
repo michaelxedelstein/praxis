@@ -1,0 +1,49 @@
+appId: com.edelstein.praxis
+productName: Praxis
+copyright: Copyright © 2026 Michael Edelstein
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite emits to out/; ship that plus package.json. Workspace deps are
+# bundled into out/main by electron-vite, so node_modules pruning stays simple.
+files:
+  - out/**/*
+  - package.json
+
+# asarUnpack anything that must stay on disk (none today; npx-launched MCP
+# servers run from the user's environment, not from the asar).
+asar: true
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - universal
+  # --- Signing / notarization (TODO: fill in when certs are available) ------
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
+  # Provide CSC_LINK / CSC_KEY_PASSWORD env for signing, and notarize via
+  # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID. Until then the app
+  # builds unsigned (Gatekeeper will warn on first open — right-click → Open).
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # --- Code signing (TODO) --------------------------------------------------
+  # Provide CSC_LINK / CSC_KEY_PASSWORD (a .pfx) to sign the installer.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+# Microphone permission prompt copy on macOS.
+extendInfo:
+  NSMicrophoneUsageDescription: Praxis uses your microphone for voice conversation.
