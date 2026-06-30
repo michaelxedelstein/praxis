@@ -1,4 +1,32 @@
+# dependencies
 node_modules/
-.DS_Store
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+coverage/
+
+# env & secrets — never commit
 .env
+.env.*
+!.env.example
+
+# electron / packaging
+apps/desktop/release/
+apps/desktop/dist-electron/
+
+# mobile / expo
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/*.keystore
+
+# os / editor
+.DS_Store
 *.log
+.vscode/
+.idea/

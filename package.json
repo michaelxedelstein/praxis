@@ -1,0 +1,30 @@
+{
+  "name": "praxis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Praxis — a voice-driven, self-owned agentic brain (Claude loop + MCP) with desktop, mobile, and relay surfaces.",
+  "type": "module",
+  "packageManager": "pnpm@10.10.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "server:dev": "pnpm --filter @praxis/server dev",
+    "desktop:dev": "pnpm --filter @praxis/desktop dev",
+    "build:mac": "pnpm --filter @praxis/desktop build:mac",
+    "build:win": "pnpm --filter @praxis/desktop build:win"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
