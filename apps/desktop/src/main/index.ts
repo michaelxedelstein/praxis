@@ -13,6 +13,7 @@ import {
   BrowserWindow,
   globalShortcut,
   ipcMain,
+  session,
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
@@ -357,8 +358,33 @@ function registerIpc(): void {
 
 /* --------------------------------- boot ----------------------------------- */
 
+// Only ever run one Praxis. A second launch just focuses the existing window,
+// which also prevents duplicate mic/permission prompts from stacked instances.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = windows?.mainWindow();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
   env = loadDesktopEnv();
+
+  // Grant mic/media to our own renderer so Chromium doesn't prompt per-request
+  // (the one-time macOS system prompt still governs actual hardware access).
+  const mediaPermissions = new Set(["media", "audioCapture", "microphone"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(mediaPermissions.has(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    mediaPermissions.has(permission),
+  );
 
   tasks = new TaskStore();
   tasks.onChange((t) => windows.broadcast(IPC.tasksUpdated, t));
