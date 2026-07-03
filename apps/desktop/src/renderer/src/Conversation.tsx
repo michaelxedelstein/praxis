@@ -150,6 +150,31 @@ export function Conversation({
     }
   }, [typed, handleResult, projectId]);
 
+  // Push-to-talk: hold Space to record, release to send (ignored while typing).
+  useEffect(() => {
+    if (!canVoice) return;
+    const typing = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+    };
+    const down = (e: KeyboardEvent): void => {
+      if (e.code !== "Space" || e.repeat || typing(e.target)) return;
+      e.preventDefault();
+      void beginListening();
+    };
+    const up = (e: KeyboardEvent): void => {
+      if (e.code !== "Space" || typing(e.target)) return;
+      e.preventDefault();
+      if (recorderRef.current) void stopAndSend();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [canVoice, beginListening, stopAndSend]);
+
   const orbClass = `orb orb-${phase}`;
 
   return (
