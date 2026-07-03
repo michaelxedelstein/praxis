@@ -15,16 +15,19 @@
  *
  * No secrets are printed; the key is only ever written to the local .env (600).
  */
-import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, chmodSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { ElevenLabsClient } from "@praxis/voice-elevenlabs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = join(here, "..", ".env");
+// The packaged .app can't read the dev .env, so it reads this stable per-user
+// file instead. Keep both in sync so voice works in dev and in the built app.
+const USER_ENV_PATH = join(homedir(), ".praxis", "desktop.env");
 const PLACEHOLDER = /^(paste|pending|your|sk_your|xxx|<)/i;
 
 function parseArgs(argv) {
@@ -48,7 +51,7 @@ function readEnv(path) {
 }
 
 /** Upsert keys into an existing .env, preserving comments/order/other lines. */
-function writeEnv(path, updates) {
+function writeEnvFile(path, updates) {
   const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
   const seen = new Set();
   const out = lines.map((line) => {
@@ -62,8 +65,15 @@ function writeEnv(path, updates) {
   for (const [k, v] of Object.entries(updates)) {
     if (!seen.has(k)) out.push(`${k}=${v}`);
   }
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, out.join("\n"));
   chmodSync(path, 0o600);
+}
+
+/** Write to both the dev .env and the per-user file the packaged app reads. */
+function writeEnv(_path, updates) {
+  writeEnvFile(ENV_PATH, updates);
+  writeEnvFile(USER_ENV_PATH, updates);
 }
 
 function isReal(v) {
@@ -128,6 +138,7 @@ async function main() {
   writeEnv(ENV_PATH, { ELEVENLABS_API_KEY: apiKey, ELEVENLABS_VOICE_ID: chosen.voiceId });
   console.log(`\n✓ Voice set to "${chosen.name}" (${chosen.voiceId}).`);
   console.log(`✓ Wrote ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID to apps/desktop/.env`);
+  console.log(`✓ Mirrored to ~/.praxis/desktop.env (used by the packaged app)`);
 
   if (args.test) {
     process.stdout.write("\nSynthesizing a test line… ");
