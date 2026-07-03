@@ -17,6 +17,7 @@ export function useStatus(): PraxisStatus | null {
   const [status, setStatus] = useState<PraxisStatus | null>(null);
   useEffect(() => {
     void window.praxis.getStatus().then(setStatus);
+    return window.praxis.onStatusUpdated(setStatus);
   }, []);
   return status;
 }

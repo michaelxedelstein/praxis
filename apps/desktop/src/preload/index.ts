@@ -15,9 +15,11 @@ import {
   type ProcessAudioRequest,
   type ProcessTextRequest,
   type ProjectActionRequest,
+  type PraxisStatus,
   type ProjectGraph,
   type RunToolRequest,
   type SaveMcpConnectionRequest,
+  type SetVoiceConfigRequest,
   type TaskRecord,
   type TurnStatusEvent,
 } from "../shared/ipc.js";
@@ -32,8 +34,12 @@ const api: PraxisBridge = {
   processAudio: (req: ProcessAudioRequest) => ipcRenderer.invoke(IPC.processAudio, req),
   processText: (req: ProcessTextRequest) => ipcRenderer.invoke(IPC.processText, req),
   getStatus: () => ipcRenderer.invoke(IPC.getStatus),
+  onStatusUpdated: (cb: (s: PraxisStatus) => void) => subscribe(IPC.statusUpdated, cb),
   onSummon: (cb: () => void) => subscribe<void>(IPC.summon, () => cb()),
   onTurnStatus: (cb: (e: TurnStatusEvent) => void) => subscribe(IPC.turnStatus, cb),
+
+  getVoices: (apiKey?: string) => ipcRenderer.invoke(IPC.getVoices, apiKey),
+  setVoiceConfig: (req: SetVoiceConfigRequest) => ipcRenderer.invoke(IPC.setVoiceConfig, req),
 
   listProjects: () => ipcRenderer.invoke(IPC.listProjects),
   refreshProjects: () => ipcRenderer.invoke(IPC.refreshProjects),

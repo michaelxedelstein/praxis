@@ -18,12 +18,14 @@ import {
 } from "electron";
 import type { ChatMessage, DispatchResult, StructuredTask } from "@praxis/shared-types";
 import type { SubAgentSpec } from "@praxis/core";
+import { ElevenLabsClient } from "@praxis/voice-elevenlabs";
 import { loadDesktopEnv, type DesktopEnv } from "./env.js";
 import { buildDesktopBrain, type DesktopBrain, type DispatchObserver } from "./brain.js";
 import { ProjectGraphService } from "./projects.js";
 import { TaskStore } from "./tasks.js";
 import { WindowManager } from "./windows.js";
 import { listConnections, saveConnection } from "./connections.js";
+import { saveUserEnv } from "./userEnv.js";
 import {
   IPC,
   type AgentRecord,
@@ -42,8 +44,11 @@ import {
   type RunToolRequest,
   type RunToolResult,
   type SaveMcpConnectionRequest,
+  type SetVoiceConfigRequest,
+  type SetVoiceConfigResult,
   type TaskRecord,
   type ToolInfo,
+  type VoiceOption,
 } from "../shared/ipc.js";
 
 let env: DesktopEnv;
@@ -153,6 +158,72 @@ function summon(): void {
   win.webContents.send(IPC.summon);
 }
 
+/* ------------------------------ voice config ------------------------------ */
+
+function currentStatus(): PraxisStatus {
+  return {
+    brainReady: Boolean(desktop?.ready),
+    hasVoice: Boolean(desktop?.eleven),
+    hasDispatch: Boolean(desktop?.hasDispatch),
+    userName: env.userName,
+    toolCount: desktop?.toolCount ?? 0,
+  };
+}
+
+function broadcastStatus(): void {
+  windows.broadcast(IPC.statusUpdated, currentStatus());
+}
+
+async function handleGetVoices(_e: IpcMainInvokeEvent, apiKey?: string): Promise<VoiceOption[]> {
+  const key = apiKey?.trim() || env.elevenLabsApiKey;
+  if (!key) return [];
+  const voices = await new ElevenLabsClient({ apiKey: key }).listVoices().catch(() => []);
+  return voices.map((v) => ({ voiceId: v.voiceId, name: v.name, category: v.category }));
+}
+
+async function handleSetVoiceConfig(
+  _e: IpcMainInvokeEvent,
+  req: SetVoiceConfigRequest,
+): Promise<SetVoiceConfigResult> {
+  const apiKey = req.apiKey?.trim();
+  if (!apiKey) return { ok: false, hasVoice: Boolean(desktop?.eleven), detail: "Enter an API key." };
+  if (!desktop) return { ok: false, hasVoice: false, detail: "Brain not ready yet — try again in a moment." };
+
+  const client = new ElevenLabsClient({ apiKey });
+  try {
+    await client.verifyKey();
+  } catch (err) {
+    return { ok: false, hasVoice: Boolean(desktop.eleven), detail: (err as Error).message };
+  }
+
+  // Resolve a voice: explicit choice, else keep existing, else a good default.
+  let voiceId = req.voiceId?.trim() || env.elevenLabsVoiceId;
+  let voiceName: string | undefined;
+  const voices = await client.listVoices().catch(() => []);
+  if (!voiceId) {
+    const preferred = ["Daniel", "George", "Brian", "Rachel"];
+    const pick = preferred.map((n) => voices.find((v) => v.name === n)).find(Boolean) ?? voices[0];
+    voiceId = pick?.voiceId;
+    voiceName = pick?.name;
+  } else {
+    voiceName = voices.find((v) => v.voiceId === voiceId)?.name;
+  }
+
+  // Persist for next launch (survives restart + readable by the packaged app).
+  const updates: Record<string, string> = { ELEVENLABS_API_KEY: apiKey };
+  if (voiceId) updates.ELEVENLABS_VOICE_ID = voiceId;
+  saveUserEnv(updates);
+
+  // Apply live — no restart needed.
+  env.elevenLabsApiKey = apiKey;
+  env.elevenLabsVoiceId = voiceId;
+  desktop.eleven = new ElevenLabsClient({ apiKey, defaultVoiceId: voiceId });
+  desktop.voiceId = voiceId;
+  broadcastStatus();
+
+  return { ok: true, hasVoice: true, voiceName };
+}
+
 /* --------------------------- project graph IPC ---------------------------- */
 
 async function refreshAndBroadcast(): Promise<ProjectGraph> {
@@ -235,13 +306,9 @@ export function requestConfirm(description: string): Promise<boolean> {
 function registerIpc(): void {
   ipcMain.handle(IPC.processText, handleProcessText);
   ipcMain.handle(IPC.processAudio, handleProcessAudio);
-  ipcMain.handle(IPC.getStatus, async (): Promise<PraxisStatus> => ({
-    brainReady: Boolean(desktop?.ready),
-    hasVoice: Boolean(desktop?.eleven),
-    hasDispatch: Boolean(desktop?.hasDispatch),
-    userName: env.userName,
-    toolCount: desktop?.toolCount ?? 0,
-  }));
+  ipcMain.handle(IPC.getStatus, async (): Promise<PraxisStatus> => currentStatus());
+  ipcMain.handle(IPC.getVoices, handleGetVoices);
+  ipcMain.handle(IPC.setVoiceConfig, handleSetVoiceConfig);
 
   ipcMain.handle(IPC.listProjects, async (): Promise<ProjectGraph> => {
     const current = graph.current();
@@ -325,6 +392,8 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error("Failed to build brain:", err);
   }
+  // The window may have rendered before the brain finished; push fresh status.
+  broadcastStatus();
 
   // Kick off the first project scan in the background.
   void refreshAndBroadcast();

@@ -11,8 +11,12 @@ export const IPC = {
   processAudio: "praxis:processAudio",
   processText: "praxis:processText",
   getStatus: "praxis:getStatus",
+  statusUpdated: "praxis:statusUpdated",
   summon: "praxis:summon",
   turnStatus: "praxis:turnStatus",
+  // Voice settings
+  getVoices: "praxis:getVoices",
+  setVoiceConfig: "praxis:setVoiceConfig",
   // Project graph
   listProjects: "praxis:listProjects",
   refreshProjects: "praxis:refreshProjects",
@@ -78,6 +82,31 @@ export interface PraxisStatus {
   hasDispatch: boolean;
   userName: string;
   toolCount: number;
+}
+
+/* ------------------------------ voice settings ---------------------------- */
+
+/** One selectable ElevenLabs voice. */
+export interface VoiceOption {
+  voiceId: string;
+  name: string;
+  category?: string;
+}
+
+/** Renderer → main: save an ElevenLabs key (and optional voice) at runtime. */
+export interface SetVoiceConfigRequest {
+  apiKey: string;
+  voiceId?: string;
+}
+
+/** Main → renderer: result of saving voice config. */
+export interface SetVoiceConfigResult {
+  ok: boolean;
+  hasVoice: boolean;
+  /** Chosen voice name when successful. */
+  voiceName?: string;
+  /** Friendly error when it failed (e.g. bad key). */
+  detail?: string;
 }
 
 /* ------------------------------ project graph ----------------------------- */
@@ -264,9 +293,16 @@ export interface PraxisBridge {
   processAudio(req: ProcessAudioRequest): Promise<ProcessResult>;
   processText(req: ProcessTextRequest): Promise<ProcessResult>;
   getStatus(): Promise<PraxisStatus>;
+  /** Subscribe to live status changes (e.g. after enabling voice). */
+  onStatusUpdated(cb: (s: PraxisStatus) => void): () => void;
   /** Subscribe to global-hotkey summons; returns an unsubscribe fn. */
   onSummon(cb: () => void): () => void;
   onTurnStatus(cb: (e: TurnStatusEvent) => void): () => void;
+
+  /** List voices for a given (or already-saved) ElevenLabs key. */
+  getVoices(apiKey?: string): Promise<VoiceOption[]>;
+  /** Save an ElevenLabs key + voice at runtime; enables voice without a restart. */
+  setVoiceConfig(req: SetVoiceConfigRequest): Promise<SetVoiceConfigResult>;
 
   listProjects(): Promise<ProjectGraph>;
   refreshProjects(): Promise<ProjectGraph>;

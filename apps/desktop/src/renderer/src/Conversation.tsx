@@ -15,6 +15,50 @@ interface Line {
 
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
+/** Inline setup shown when voice isn't configured — paste an ElevenLabs key to
+ *  enable voice live (no restart). Saved to the per-user config for next time. */
+function VoiceSetup(): JSX.Element {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const enable = async (): Promise<void> => {
+    if (!key.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await window.praxis.setVoiceConfig({ apiKey: key.trim() });
+      if (!res.ok) setError(res.detail ?? "Couldn't enable voice.");
+      // On success the status broadcast flips the UI to the voice controls.
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="voice-setup">
+      <p className="hint">
+        Voice isn’t configured. Paste your ElevenLabs API key to enable it — you can still type meanwhile.
+      </p>
+      <div className="voice-setup-row">
+        <input
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="sk_… ElevenLabs API key"
+          onKeyDown={(e) => e.key === "Enter" && void enable()}
+        />
+        <button className="primary" disabled={busy || !key.trim()} onClick={() => void enable()}>
+          {busy ? "Enabling…" : "Enable voice"}
+        </button>
+      </div>
+      {error && <p className="voice-setup-error">{error}</p>}
+    </div>
+  );
+}
+
 export function Conversation({
   projectId,
   canVoice,
@@ -111,12 +155,9 @@ export function Conversation({
   return (
     <div className={`conversation ${compact ? "compact" : ""}`}>
       <div className="transcript" ref={scrollRef}>
-        {lines.length === 0 && (
-          <p className="hint">
-            {canVoice
-              ? "Hold the orb (or Space) and talk, or type below."
-              : "Voice isn’t configured — add ELEVENLABS_API_KEY. You can still type."}
-          </p>
+        {!canVoice && <VoiceSetup />}
+        {lines.length === 0 && canVoice && (
+          <p className="hint">Hold the orb (or Space) and talk, or type below.</p>
         )}
         {lines.map((l, i) => (
           <div key={i} className={`bubble ${l.who}`}>

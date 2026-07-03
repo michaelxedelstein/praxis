@@ -671,3 +671,38 @@ button {
   background: var(--bg);
   overflow-y: auto;
 }
+
+/* ---- inline voice setup (shown when voice isn't configured) ---- */
+.voice-setup {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.voice-setup .hint {
+  margin: 0 0 8px;
+}
+.voice-setup-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.voice-setup-row input {
+  flex: 1;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.voice-setup-row input:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+.voice-setup-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
