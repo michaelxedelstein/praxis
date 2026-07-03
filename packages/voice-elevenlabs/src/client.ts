@@ -39,6 +39,21 @@ export interface SynthesizeOptions {
   outputFormat?: string;
 }
 
+/** A voice from the account's library, as returned by GET /v1/voices. */
+export interface VoiceSummary {
+  voiceId: string;
+  name: string;
+  category?: string;
+  previewUrl?: string;
+}
+
+/** Basic account info from GET /v1/user (used to verify a key + show the tier). */
+export interface AccountInfo {
+  tier?: string;
+  characterCount?: number;
+  characterLimit?: number;
+}
+
 export class ElevenLabsClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
@@ -56,6 +71,79 @@ export class ElevenLabsClient {
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     return { "xi-api-key": this.apiKey, ...extra };
+  }
+
+  /**
+   * Verify the API key by hitting the lightweight /v1/user endpoint. Returns
+   * account info on success; throws with a friendly message on an invalid key.
+   */
+  async verifyKey(): Promise<AccountInfo> {
+    const res = await fetch(`${this.baseUrl}/v1/user`, { headers: this.headers() });
+    if (res.status === 401) throw new Error("That ElevenLabs API key was rejected (401). Double-check it.");
+    if (!res.ok) throw new Error(`ElevenLabs /v1/user failed (${res.status}): ${await safeText(res)}`);
+    const json = (await res.json()) as {
+      subscription?: { tier?: string; character_count?: number; character_limit?: number };
+    };
+    return {
+      tier: json.subscription?.tier,
+      characterCount: json.subscription?.character_count,
+      characterLimit: json.subscription?.character_limit,
+    };
+  }
+
+  /** List the voices available to this account (built-in + cloned). */
+  async listVoices(): Promise<VoiceSummary[]> {
+    const res = await fetch(`${this.baseUrl}/v1/voices`, { headers: this.headers() });
+    if (!res.ok) throw new Error(`ElevenLabs /v1/voices failed (${res.status}): ${await safeText(res)}`);
+    const json = (await res.json()) as {
+      voices?: Array<{ voice_id: string; name: string; category?: string; preview_url?: string }>;
+    };
+    return (json.voices ?? []).map((v) => ({
+      voiceId: v.voice_id,
+      name: v.name,
+      category: v.category,
+      previewUrl: v.preview_url,
+    }));
+  }
+
+  /**
+   * Create a Conversational-AI (Voice Engine) agent configured as a "custom LLM"
+   * that calls back into a Praxis server endpoint. Used for the mobile/relay
+   * flow; returns the new agent id. Desktop voice does NOT need this.
+   */
+  async createConvaiAgent(opts: {
+    name: string;
+    voiceId: string;
+    /** OpenAI-compatible chat completions URL (the Praxis server seam). */
+    customLlmUrl: string;
+    /** First words the agent speaks; keep short. */
+    firstMessage?: string;
+    /** System prompt for the agent persona. */
+    prompt?: string;
+  }): Promise<string> {
+    const body = {
+      name: opts.name,
+      conversation_config: {
+        agent: {
+          first_message: opts.firstMessage ?? "Praxis online. What do you need?",
+          prompt: {
+            prompt: opts.prompt ?? "You are Praxis, a concise, voice-driven engineering assistant.",
+            llm: "custom-llm",
+            custom_llm: { url: opts.customLlmUrl },
+          },
+        },
+        tts: { voice_id: opts.voiceId },
+      },
+    };
+    const res = await fetch(`${this.baseUrl}/v1/convai/agents/create`, {
+      method: "POST",
+      headers: this.headers({ "content-type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`ElevenLabs agent create failed (${res.status}): ${await safeText(res)}`);
+    const json = (await res.json()) as { agent_id?: string };
+    if (!json.agent_id) throw new Error("ElevenLabs agent create response missing 'agent_id'.");
+    return json.agent_id;
   }
 
   /** Speech → text via Scribe. Returns the transcript string. */

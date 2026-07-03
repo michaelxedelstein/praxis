@@ -13,10 +13,20 @@ export type { AnthropicClientOptions } from "./anthropic.js";
 
 export { McpManager } from "./mcp/manager.js";
 
+export { Conductor, SPAWN_TOOL_NAME, buildSpawnToolDef } from "./conductor.js";
+export type {
+  ConductorOptions,
+  ConductorListener,
+  SubAgentSpec,
+  SubAgentState,
+  SubAgentStatus,
+} from "./conductor.js";
+
 export { looksLikeWork, pickModel } from "./classifier.js";
 export { buildSystemPrompt, DISPATCH_TOOL_NAME } from "./prompt.js";
 
 export type {
+  ExtraTool,
   LlmClient,
   LlmRequest,
   LlmResponse,

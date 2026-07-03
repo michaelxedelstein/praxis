@@ -1,186 +1,147 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PraxisStatus } from "../../shared/ipc.js";
-import type { ProcessResult } from "../../shared/ipc.js";
-import { startRecording, playMp3Base64, type RecorderHandle } from "./voice.js";
-
-interface Line {
-  who: "you" | "praxis";
-  text: string;
-  tag?: string;
-}
-
-type Phase = "idle" | "listening" | "thinking" | "speaking";
+/**
+ * App — the Jarvis command center shell.
+ *
+ * The main window renders the full dashboard: the hive-mind constellation with
+ * a selectable repo panel, a global voice HUD, the task board, and launchers
+ * for the tool palette and connections. Satellite windows (opened when you
+ * expand across monitors) render a single focused view via the ?view= param.
+ */
+import { useEffect, useState } from "react";
+import { HiveMind } from "./HiveMind.js";
+import { RepoPanel } from "./RepoPanel.js";
+import { TaskBoard } from "./TaskBoard.js";
+import { ToolPalette } from "./ToolPalette.js";
+import { Connections } from "./Connections.js";
+import { Conversation } from "./Conversation.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
+import {
+  currentView,
+  useDisplayInfo,
+  useProjectGraph,
+  useStatus,
+  useTasks,
+} from "./store.js";
 
 export function App(): JSX.Element {
-  const [status, setStatus] = useState<PraxisStatus | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [lines, setLines] = useState<Line[]>([]);
-  const [handsFree, setHandsFree] = useState(false);
-  const [typed, setTyped] = useState("");
+  const view = currentView();
+  const status = useStatus();
+  const canVoice = Boolean(status?.hasVoice);
 
-  const recorderRef = useRef<RecorderHandle | null>(null);
-  const handsFreeRef = useRef(false);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Satellite windows render one focused surface.
+  if (view === "conversation") {
+    return (
+      <div className="satellite">
+        <Conversation canVoice={canVoice} />
+        <ConfirmDialog />
+      </div>
+    );
+  }
+  if (view === "tasks") {
+    return (
+      <div className="satellite">
+        <TaskBoard />
+        <ConfirmDialog />
+      </div>
+    );
+  }
 
+  return <Dashboard />;
+}
+
+function Dashboard(): JSX.Element {
+  const status = useStatus();
+  const { graph, refresh, loading } = useProjectGraph();
+  const tasks = useTasks();
+  const display = useDisplayInfo();
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showPalette, setShowPalette] = useState(false);
+  const [showConnections, setShowConnections] = useState(false);
+  const [showTasks, setShowTasks] = useState(true);
+
+  const canVoice = Boolean(status?.hasVoice);
+  const expanded = display?.layout === "expanded";
+
+  // Global summon + Cmd+K palette.
   useEffect(() => {
-    handsFreeRef.current = handsFree;
-  }, [handsFree]);
-
-  useEffect(() => {
-    void window.praxis.getStatus().then(setStatus);
-    const off = window.praxis.onSummon(() => void beginListening());
-    return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [lines, phase]);
-
-  const handleResult = useCallback(async (res: ProcessResult) => {
-    if (res.userText) setLines((l) => [...l, { who: "you", text: res.userText }]);
-    const tag =
-      res.result.intent === "task"
-        ? res.result.dispatched?.ok
-          ? "task dispatched"
-          : "dispatch failed"
-        : undefined;
-    setLines((l) => [...l, { who: "praxis", text: res.result.reply, tag }]);
-
-    if (res.audioBase64) {
-      setPhase("speaking");
-      await playMp3Base64(res.audioBase64);
-    }
-    setPhase("idle");
-    if (handsFreeRef.current) void beginListening();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const beginListening = useCallback(async () => {
-    if (recorderRef.current) return;
-    try {
-      recorderRef.current = await startRecording();
-      setPhase("listening");
-    } catch {
-      setPhase("idle");
-    }
-  }, []);
-
-  const stopAndSend = useCallback(async () => {
-    const rec = recorderRef.current;
-    if (!rec) return;
-    recorderRef.current = null;
-    setPhase("thinking");
-    try {
-      const { audio, mimeType } = await rec.stop();
-      const res = await window.praxis.processAudio({ audio, mimeType });
-      await handleResult(res);
-    } catch (err) {
-      setLines((l) => [...l, { who: "praxis", text: `Something went wrong: ${(err as Error).message}` }]);
-      setPhase("idle");
-    }
-  }, [handleResult]);
-
-  const sendTyped = useCallback(async () => {
-    const text = typed.trim();
-    if (!text) return;
-    setTyped("");
-    setPhase("thinking");
-    try {
-      const res = await window.praxis.processText({ text });
-      await handleResult(res);
-    } catch (err) {
-      setLines((l) => [...l, { who: "praxis", text: `Error: ${(err as Error).message}` }]);
-      setPhase("idle");
-    }
-  }, [typed, handleResult]);
-
-  // Spacebar push-to-talk (ignore while typing in the input).
-  useEffect(() => {
-    const isTyping = (t: EventTarget | null): boolean =>
-      t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
-    const down = (e: KeyboardEvent): void => {
-      if (e.code === "Space" && !e.repeat && !isTyping(e.target) && phase === "idle") {
+    const off = window.praxis.onSummon(() => setSelectedId(null));
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        void beginListening();
+        setShowPalette((s) => !s);
+      }
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        setShowPalette(false);
+        setShowConnections(false);
       }
     };
-    const up = (e: KeyboardEvent): void => {
-      if (e.code === "Space" && !isTyping(e.target) && recorderRef.current) {
-        e.preventDefault();
-        void stopAndSend();
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
+    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
+      off();
+      window.removeEventListener("keydown", onKey);
     };
-  }, [phase, beginListening, stopAndSend]);
+  }, []);
 
-  const orbClass = `orb orb-${phase}`;
-  const canTalk = Boolean(status?.hasVoice);
+  const toggleLayout = (): void => {
+    void window.praxis.setLayout(expanded ? "collapsed" : "expanded");
+  };
 
   return (
-    <div className="app">
+    <div className="app jarvis">
       <header className="topbar">
-        <span className="brand">Praxis</span>
+        <span className="brand">PRAXIS</span>
         <span className={`dot ${status?.brainReady ? "ok" : "warn"}`} title="brain status" />
-        <label className="handsfree">
-          <input
-            type="checkbox"
-            checked={handsFree}
-            onChange={(e) => setHandsFree(e.target.checked)}
-          />
-          hands-free
-        </label>
+        <span className="tool-count">{status?.toolCount ?? 0} tools</span>
+        <div className="spacer" />
+        <button className="link-btn" onClick={() => setShowPalette(true)}>Tools (⌘K)</button>
+        <button className="link-btn" onClick={() => setShowConnections(true)}>Connections</button>
+        <button className="link-btn" onClick={() => setShowTasks((s) => !s)}>
+          {showTasks ? "Hide board" : "Show board"}
+        </button>
+        <button className="link-btn" onClick={() => refresh()} disabled={loading}>
+          {loading ? "Scanning…" : "Refresh"}
+        </button>
+        <button className="link-btn" onClick={toggleLayout}>
+          {expanded ? "Collapse" : "Expand"}{display && display.displayCount > 1 ? "" : ""}
+        </button>
       </header>
 
-      <div className="transcript" ref={scrollRef}>
-        {lines.length === 0 && (
-          <p className="hint">
-            {canTalk
-              ? `Hold the button (or Space) and talk. Try “what did we just do on Roomies?”`
-              : `Voice isn’t configured yet — add ELEVENLABS_API_KEY to .env. You can still type below.`}
-          </p>
-        )}
-        {lines.map((l, i) => (
-          <div key={i} className={`bubble ${l.who}`}>
-            <div className="text">{l.text}</div>
-            {l.tag && <div className="tag">{l.tag}</div>}
+      <div className="stage">
+        <div className="hive-wrap">
+          <HiveMind graph={graph} tasks={tasks} selectedId={selectedId} onSelect={setSelectedId} />
+          {graph.nodes.length === 0 && (
+            <div className="hive-empty">
+              {loading ? "Mapping your projects…" : "No projects found. Check PRAXIS_PROJECT_ROOTS."}
+            </div>
+          )}
+          <div className="hive-legend">
+            <span><i className="swatch cyan" /> local</span>
+            <span><i className="swatch amber" /> uncommitted</span>
+            <span><i className="swatch violet" /> GitHub-only</span>
           </div>
-        ))}
-        {phase === "thinking" && <div className="bubble praxis pending">thinking…</div>}
+        </div>
+
+        {selectedId && (
+          <RepoPanel projectId={selectedId} canVoice={canVoice} onClose={() => setSelectedId(null)} />
+        )}
+
+        {showTasks && !selectedId && (
+          <aside className="board-dock">
+            <TaskBoard />
+          </aside>
+        )}
       </div>
 
-      <div className="controls">
-        <button
-          className={orbClass}
-          disabled={!canTalk}
-          onPointerDown={() => void beginListening()}
-          onPointerUp={() => void stopAndSend()}
-          onPointerLeave={() => recorderRef.current && void stopAndSend()}
-          title="Hold to talk"
-        >
-          {phase === "listening" ? "Listening…" : phase === "speaking" ? "Speaking…" : "Hold to talk"}
-        </button>
+      {!selectedId && (
+        <div className="global-hud">
+          <Conversation canVoice={canVoice} compact />
+        </div>
+      )}
 
-        <form
-          className="typer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendTyped();
-          }}
-        >
-          <input
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            placeholder="…or type a message"
-          />
-          <button type="submit">Send</button>
-        </form>
-      </div>
+      {showPalette && <ToolPalette onClose={() => setShowPalette(false)} />}
+      {showConnections && <Connections onClose={() => setShowConnections(false)} />}
+      <ConfirmDialog />
     </div>
   );
 }

@@ -22,14 +22,22 @@ mac:
     - target: dmg
       arch:
         - universal
-  # --- Signing / notarization (TODO: fill in when certs are available) ------
-  # hardenedRuntime: true
-  # gatekeeperAssess: false
-  # entitlements: build/entitlements.mac.plist
-  # entitlementsInherit: build/entitlements.mac.plist
-  # Provide CSC_LINK / CSC_KEY_PASSWORD env for signing, and notarize via
-  # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID. Until then the app
-  # builds unsigned (Gatekeeper will warn on first open — right-click → Open).
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # macOS permission prompt copy. Praxis automates other apps (browser, Finder,
+  # Messages) via AppleScript and reads the mic for voice.
+  extendInfo:
+    NSMicrophoneUsageDescription: Praxis uses your microphone for voice conversation.
+    NSAppleEventsUsageDescription: Praxis controls apps like your browser, Finder, and Messages on your behalf.
+    NSSystemAdministrationUsageDescription: Praxis automates local applications you ask it to control.
+  # Signing/notarization kick in automatically when the env is present:
+  #   CSC_LINK / CSC_KEY_PASSWORD  -> Developer ID signing
+  #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID -> notarization
+  # Without them electron-builder still produces a working (ad-hoc signed) .dmg;
+  # Gatekeeper warns on first open (right-click -> Open) and the automation
+  # permission prompts still appear normally.
 
 win:
   target:
@@ -43,7 +51,3 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-
-# Microphone permission prompt copy on macOS.
-extendInfo:
-  NSMicrophoneUsageDescription: Praxis uses your microphone for voice conversation.

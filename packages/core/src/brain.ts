@@ -24,6 +24,7 @@ import { resolveBrainConfig } from "./config.js";
 import { pickModel } from "./classifier.js";
 import { buildSystemPrompt, buildDispatchToolDef, DISPATCH_TOOL_NAME } from "./prompt.js";
 import type {
+  ExtraTool,
   LlmClient,
   LlmMessage,
   LlmToolDef,
@@ -37,6 +38,8 @@ export interface BrainOptions {
   mcp: McpToolProvider;
   dispatcher: TaskDispatcher;
   config?: Partial<BrainConfig>;
+  /** Host-provided built-in tools (e.g. spawn_subagents on desktop). */
+  extraTools?: ExtraTool[];
 }
 
 export interface RunTurnArgs {
@@ -46,6 +49,11 @@ export interface RunTurnArgs {
   userText: string;
   /** Optional progress callback for UI/voice status updates. */
   onStatus?: StatusEmitter;
+  /**
+   * Optional extra grounding appended to the system prompt for this turn —
+   * e.g. the focused repo's file tree, README, and recent commits.
+   */
+  context?: string;
 }
 
 export class Brain {
@@ -53,25 +61,34 @@ export class Brain {
   private readonly mcp: McpToolProvider;
   private readonly dispatcher: TaskDispatcher;
   private readonly config: BrainConfig;
+  private readonly extraTools: Map<string, ExtraTool>;
 
   constructor(opts: BrainOptions) {
     this.llm = opts.llm;
     this.mcp = opts.mcp;
     this.dispatcher = opts.dispatcher;
     this.config = resolveBrainConfig(opts.config ?? {});
+    this.extraTools = new Map((opts.extraTools ?? []).map((t) => [t.name, t]));
   }
 
   async runTurn(args: RunTurnArgs): Promise<TurnResult> {
-    const { userText, history = [], onStatus } = args;
+    const { userText, history = [], onStatus, context } = args;
     const emit: StatusEmitter = onStatus ?? (() => {});
 
-    const system = buildSystemPrompt(this.config);
+    const system = context
+      ? `${buildSystemPrompt(this.config)}\n\nCURRENT FOCUS:\n${context}`
+      : buildSystemPrompt(this.config);
     const model = pickModel(userText, this.config);
 
-    // Assemble the tool surface: every MCP tool plus the built-in dispatcher.
+    // Assemble the tool surface: every MCP tool, host extras, and dispatch.
     const mcpTools = await this.mcp.listTools();
     const tools: LlmToolDef[] = [
       ...mcpTools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      })),
+      ...[...this.extraTools.values()].map((t) => ({
         name: t.name,
         description: t.description,
         input_schema: t.inputSchema,
@@ -134,6 +151,21 @@ export class Brain {
             tool_use_id: call.id,
             content: result.text,
             is_error: !result.dispatch.ok,
+          });
+          continue;
+        }
+
+        const extra = this.extraTools.get(call.name);
+        if (extra) {
+          emit(`running: ${call.name}`);
+          const out = await extra
+            .run(call.input)
+            .catch((err: Error) => ({ text: `Tool failed: ${err.message}`, isError: true }));
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: out.text || "(no output)",
+            is_error: out.isError,
           });
           continue;
         }

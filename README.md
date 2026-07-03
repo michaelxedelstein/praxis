@@ -76,8 +76,10 @@ surface lives in `apps/`.
 | `packages/bridge-adapter` | Turns a structured task into a Slack message that triggers `cursor-slack-bridge`. |
 | `packages/transport` | The WebSocket protocol (zod-typed messages) and bearer auth helpers. |
 | `packages/voice-elevenlabs` | Thin wrappers around ElevenLabs STT, TTS, and Voice Engine token minting. |
+| `packages/mcp-importer` | Discovers the MCP servers you already use in Cursor and turns the reachable ones into launchable configs. |
+| `packages/mcp-mac-control` | An MCP server for macOS automation: browser, Finder, iMessage, app focus, clipboard, notifications. |
 | `apps/server` | The headless relay: WS transport, `/voice/token`, `/healthz`, and the OpenAI-compatible LLM endpoint. |
-| `apps/desktop` | Electron app (macOS + Windows). Runs the brain locally, global hotkey, push-to-talk + hands-free. |
+| `apps/desktop` | The Jarvis command center (macOS + Windows). Hive-mind of your repos, repo chat + dispatch, tool palette, sub-agents, multi-monitor. |
 | `apps/mobile` | Expo / React Native app. A thin voice client that talks to a brain over WSS. |
 | `deploy/` | Everything to stand up the relay: Dockerfile, compose, Caddy, VPS provisioning, and `DEPLOY.md`. |
 
@@ -108,6 +110,32 @@ You'll need an `ANTHROPIC_API_KEY`, an `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_
 for spoken replies, and (to dispatch work) a `SLACK_BOT_TOKEN` and
 `CURSOR_BRIDGE_BOT_ID`. Summon the window anywhere with the global hotkey
 (default `Cmd/Ctrl+Shift+Space`).
+
+### The Jarvis command center
+
+The desktop app opens on a **hive-mind**: a holographic 3D constellation of every
+project you work on, local and on GitHub, merged into one graph. Nodes glow by
+recency, ring when a task is running or the repo has uncommitted changes, and
+cluster by language. Click one and the camera flies in, opening a panel where you
+can talk to that repo (grounded in its actual files and recent commits), dispatch
+a task to your Mac through the Cursor Bridge, or jump to Cursor / Finder / GitHub.
+
+- **Voice everywhere** — hold the orb or Space to talk from the global HUD or any
+  repo panel; toggle hands-free for a continuous conversation.
+- **Tool palette (`Cmd/Ctrl+K`)** — every MCP tool the brain has, searchable and
+  runnable inline. New connections show up automatically.
+- **Connections** — Praxis discovers the MCP servers you already use in Cursor and
+  maps them to public equivalents; drop in a key once per service and it's live.
+- **Sub-agents** — big jobs fan out to autonomous helpers (one per repo, say) that
+  work in parallel and report back; watch them on the task board.
+- **Mac control** — it can open browser tabs, reveal files in Finder, send an
+  iMessage, focus apps, and more. Destructive actions ask before they run.
+- **Multi-monitor** — hit Expand to spread the hive, the active conversation, and
+  the task board across 2-3 screens; Collapse pulls it back to one window.
+
+First launch will trigger macOS permission prompts (microphone, and Automation for
+each app it controls). Reading iMessage history additionally needs Full Disk Access,
+which you can grant in System Settings if you want that feature.
 
 To package installers:
 

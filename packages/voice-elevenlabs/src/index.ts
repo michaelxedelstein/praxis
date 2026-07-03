@@ -7,5 +7,7 @@ export type {
   ElevenLabsOptions,
   TranscribeOptions,
   SynthesizeOptions,
+  VoiceSummary,
+  AccountInfo,
 } from "./client.js";
 export type { VoiceTokenResponse } from "@praxis/shared-types";

@@ -38,6 +38,17 @@ export interface TaskDispatcher {
   dispatchTask(task: StructuredTask): Promise<DispatchResult>;
 }
 
+/**
+ * A host-provided built-in tool (beyond MCP + dispatch). The desktop uses this
+ * to expose things like `spawn_subagents` without core knowing the details.
+ */
+export interface ExtraTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  run(input: Record<string, unknown>): Promise<ToolResult>;
+}
+
 /* ------------------------------- LLM client ------------------------------- */
 
 /** A content block in an assistant response. */

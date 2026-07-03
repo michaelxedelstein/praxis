@@ -9,6 +9,9 @@ out/
 *.tsbuildinfo
 .turbo/
 coverage/
+# ...but keep the electron-builder resources (entitlements, icons)
+!apps/desktop/build/
+!apps/desktop/build/**
 
 # env & secrets — never commit
 .env
