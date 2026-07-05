@@ -22,6 +22,7 @@ import {
   type SetVoiceConfigRequest,
   type TaskRecord,
   type TurnStatusEvent,
+  type WakeCheckRequest,
 } from "../shared/ipc.js";
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -40,6 +41,7 @@ const api: PraxisBridge = {
 
   getVoices: (apiKey?: string) => ipcRenderer.invoke(IPC.getVoices, apiKey),
   setVoiceConfig: (req: SetVoiceConfigRequest) => ipcRenderer.invoke(IPC.setVoiceConfig, req),
+  wakeCheck: (req: WakeCheckRequest) => ipcRenderer.invoke(IPC.wakeCheck, req),
 
   listProjects: () => ipcRenderer.invoke(IPC.listProjects),
   refreshProjects: () => ipcRenderer.invoke(IPC.refreshProjects),

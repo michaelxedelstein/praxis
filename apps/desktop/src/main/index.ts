@@ -50,6 +50,8 @@ import {
   type TaskRecord,
   type ToolInfo,
   type VoiceOption,
+  type WakeCheckRequest,
+  type WakeCheckResult,
 } from "../shared/ipc.js";
 
 let env: DesktopEnv;
@@ -87,12 +89,76 @@ async function handleProcessAudio(
   req: ProcessAudioRequest,
 ): Promise<ProcessResult> {
   if (!desktop?.eleven) throw new Error("Voice is not configured (set ELEVENLABS_API_KEY).");
-  const filename = req.mimeType.includes("webm") ? "clip.webm" : "clip.wav";
-  const userText = await desktop.eleven.transcribe({
-    audio: new Uint8Array(req.audio),
-    filename,
-  });
+  const filename = req.mimeType.includes("webm")
+    ? "clip.webm"
+    : req.mimeType.includes("mp4")
+      ? "clip.mp4"
+      : "clip.wav";
+  const kb = Math.round((req.audio.byteLength / 1024) * 10) / 10;
+  let userText = "";
+  try {
+    userText = await desktop.eleven.transcribe({
+      audio: new Uint8Array(req.audio),
+      filename,
+    });
+    console.log(
+      `[voice] stt: ${req.audio.byteLength} bytes (${req.mimeType}) -> ${JSON.stringify(userText)}`,
+    );
+  } catch (err) {
+    console.error("[voice] stt error:", (err as Error).message);
+    throw err;
+  }
+  // Empty transcript: tell mic-capture failure (no bytes) from silent/undecoded
+  // audio (bytes present, no words) so we can diagnose from the visible message.
+  if (!userText.trim()) {
+    const reply =
+      req.audio.byteLength < 1024
+        ? `I didn't hear anything — no audio was captured (${kb} KB). Check that the right microphone is selected in System Settings → Sound → Input, and that its input level moves when you talk.`
+        : `I picked up sound (${kb} KB) but couldn't make out any words. Try speaking a bit louder/closer, or check your input level.`;
+    return {
+      userText: "",
+      result: { reply, intent: "chat", toolsUsed: [] },
+      audioBase64: null,
+    };
+  }
   return runTurnAndSpeak(userText, userText, req.projectId);
+}
+
+/* -------------------------------- wake word -------------------------------- */
+
+/** Natural wake phrases (normalized: lowercase, no punctuation). Kept loose so
+ *  "hey jarvis wake up", "ok jarvis", "praxis you up?" all land. */
+const WAKE_WORDS = ["jarvis", "praxis", "computer wake up"];
+
+function containsWakeWord(text: string): boolean {
+  const norm = text.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+  return WAKE_WORDS.some((w) => norm.includes(w));
+}
+
+/** Transcribe a short ambient clip and decide whether it contains a wake
+ *  phrase. Cheap by design: clips only arrive when the renderer's local level
+ *  meter detected speech-like audio, so silence never reaches the API. */
+async function handleWakeCheck(
+  _e: IpcMainInvokeEvent,
+  req: WakeCheckRequest,
+): Promise<WakeCheckResult> {
+  if (!desktop?.eleven) return { woke: false, heard: "" };
+  let heard = "";
+  try {
+    heard = await desktop.eleven.transcribe({
+      audio: new Uint8Array(req.audio),
+      filename: req.mimeType.includes("webm") ? "wake.webm" : "wake.mp4",
+    });
+  } catch (err) {
+    console.error("[wake] stt error:", (err as Error).message);
+    return { woke: false, heard: "" };
+  }
+  const woke = containsWakeWord(heard);
+  if (woke) {
+    console.log(`[wake] woke on: ${JSON.stringify(heard)}`);
+    summon();
+  }
+  return { woke, heard };
 }
 
 async function runTurnAndSpeak(
@@ -310,6 +376,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.getStatus, async (): Promise<PraxisStatus> => currentStatus());
   ipcMain.handle(IPC.getVoices, handleGetVoices);
   ipcMain.handle(IPC.setVoiceConfig, handleSetVoiceConfig);
+  ipcMain.handle(IPC.wakeCheck, handleWakeCheck);
 
   ipcMain.handle(IPC.listProjects, async (): Promise<ProjectGraph> => {
     const current = graph.current();

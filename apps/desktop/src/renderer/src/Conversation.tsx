@@ -5,7 +5,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProcessResult, TurnStatusEvent } from "../../shared/ipc.js";
-import { playMp3Base64, startRecording, type RecorderHandle } from "./voice.js";
+import {
+  playMp3Base64,
+  recordCommand,
+  startRecording,
+  startWakeLoop,
+  type RecorderHandle,
+  type WakeLoopHandle,
+} from "./voice.js";
 
 interface Line {
   who: "you" | "praxis";
@@ -72,10 +79,12 @@ export function Conversation({
   const [lines, setLines] = useState<Line[]>([]);
   const [status, setStatus] = useState<string>("");
   const [handsFree, setHandsFree] = useState(false);
+  const [wakeWord, setWakeWord] = useState(false);
   const [typed, setTyped] = useState("");
 
   const recorderRef = useRef<RecorderHandle | null>(null);
   const handsFreeRef = useRef(false);
+  const wakeRef = useRef<WakeLoopHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -150,6 +159,44 @@ export function Conversation({
     }
   }, [typed, handleResult, projectId]);
 
+  // Wake word: always-listening loop. On "Hey Jarvis" / "Praxis…" the window is
+  // summoned, we acknowledge, then record hands-free until you stop talking.
+  useEffect(() => {
+    if (!wakeWord || !canVoice) return;
+    let cancelled = false;
+    void startWakeLoop({
+      onWake: async (heard) => {
+        if (cancelled) return;
+        wakeRef.current?.setPaused(true);
+        setLines((l) => [
+          ...l,
+          { who: "praxis", text: "Yes? I'm listening…", tag: `woke on “${heard.trim()}”` },
+        ]);
+        setPhase("listening");
+        try {
+          const clip = await recordCommand({});
+          setPhase("thinking");
+          const res = await window.praxis.processAudio({ ...clip, projectId });
+          await handleResult(res);
+        } catch {
+          setPhase("idle");
+        }
+        wakeRef.current?.setPaused(false);
+      },
+    })
+      .then((h) => {
+        if (cancelled) h.stop();
+        else wakeRef.current = h;
+      })
+      .catch(() => setWakeWord(false));
+    return () => {
+      cancelled = true;
+      wakeRef.current?.stop();
+      wakeRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeWord, canVoice, projectId]);
+
   // Push-to-talk: hold Space to record, release to send (ignored while typing).
   useEffect(() => {
     if (!canVoice) return;
@@ -207,6 +254,15 @@ export function Conversation({
         <label className="handsfree">
           <input type="checkbox" checked={handsFree} onChange={(e) => setHandsFree(e.target.checked)} />
           hands-free
+        </label>
+        <label className="handsfree" title="Say “Hey Jarvis” or “Praxis, wake up” to start talking">
+          <input
+            type="checkbox"
+            checked={wakeWord}
+            disabled={!canVoice}
+            onChange={(e) => setWakeWord(e.target.checked)}
+          />
+          {wakeWord ? "wake word: listening…" : "wake word"}
         </label>
       </div>
 

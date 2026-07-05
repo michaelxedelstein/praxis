@@ -17,6 +17,8 @@ export const IPC = {
   // Voice settings
   getVoices: "praxis:getVoices",
   setVoiceConfig: "praxis:setVoiceConfig",
+  // Wake word ("Hey Jarvis")
+  wakeCheck: "praxis:wakeCheck",
   // Project graph
   listProjects: "praxis:listProjects",
   refreshProjects: "praxis:refreshProjects",
@@ -107,6 +109,22 @@ export interface SetVoiceConfigResult {
   voiceName?: string;
   /** Friendly error when it failed (e.g. bad key). */
   detail?: string;
+}
+
+/* -------------------------------- wake word -------------------------------- */
+
+/** Renderer → main: a short clip that may contain a wake phrase. */
+export interface WakeCheckRequest {
+  audio: ArrayBuffer;
+  mimeType: string;
+}
+
+/** Main → renderer: whether the clip contained a wake phrase. */
+export interface WakeCheckResult {
+  /** True when a wake phrase was detected. */
+  woke: boolean;
+  /** What was heard (for the HUD's debug line). */
+  heard: string;
 }
 
 /* ------------------------------ project graph ----------------------------- */
@@ -303,6 +321,8 @@ export interface PraxisBridge {
   getVoices(apiKey?: string): Promise<VoiceOption[]>;
   /** Save an ElevenLabs key + voice at runtime; enables voice without a restart. */
   setVoiceConfig(req: SetVoiceConfigRequest): Promise<SetVoiceConfigResult>;
+  /** Check a short clip for a wake phrase ("Hey Jarvis" etc.). */
+  wakeCheck(req: WakeCheckRequest): Promise<WakeCheckResult>;
 
   listProjects(): Promise<ProjectGraph>;
   refreshProjects(): Promise<ProjectGraph>;

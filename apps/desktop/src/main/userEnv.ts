@@ -19,10 +19,10 @@ export function saveUserEnv(updates: Record<string, string>): void {
   const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
   const seen = new Set<string>();
   const out = lines.map((line) => {
-    const m = line.match(/^([A-Z0-9_]+)=/);
-    if (m && updates[m[1]] !== undefined) {
-      seen.add(m[1]);
-      return `${m[1]}=${updates[m[1]]}`;
+    const key = line.match(/^([A-Z0-9_]+)=/)?.[1];
+    if (key !== undefined && updates[key] !== undefined) {
+      seen.add(key);
+      return `${key}=${updates[key]}`;
     }
     return line;
   });
