@@ -25,33 +25,62 @@ export class McpManager implements McpToolProvider {
 
   private constructor() {}
 
-  /** Connect to every enabled server in the config. Failing servers are skipped
-   * (logged) so one bad server doesn't take down the brain. */
+  /**
+   * Connect to every enabled server in the config. Failing servers are skipped
+   * (logged) so one bad server doesn't take down the brain.
+   *
+   * Servers connect in PARALLEL, each with a hard timeout: a remote MCP that
+   * stalls on an interactive OAuth sign-in (its `mcp-remote` bridge waits for a
+   * browser callback) must never block the others or freeze brain startup. Any
+   * server that doesn't finish the MCP handshake within `connectTimeoutMs` is
+   * skipped; the user can authorize it and it connects on the next launch.
+   */
   static async create(
     servers: McpServerConfig[],
     log: (msg: string) => void = () => {},
+    connectTimeoutMs = 25_000,
   ): Promise<McpManager> {
     const mgr = new McpManager();
-    for (const cfg of servers) {
-      if (!cfg.enabled) continue;
-      try {
-        const transport = new StdioClientTransport({
-          command: cfg.command,
-          args: cfg.args,
-          env: { ...process.env, ...cfg.env } as Record<string, string>,
-        });
-        const client = new Client(
-          { name: `praxis-${cfg.id}`, version: "0.1.0" },
-          { capabilities: {} },
-        );
-        await client.connect(transport);
-        mgr.connected.push({ id: cfg.id, client });
-        log(`MCP connected: ${cfg.id}`);
-      } catch (err) {
-        log(`MCP failed to connect (${cfg.id}): ${(err as Error).message}`);
-      }
-    }
+    await Promise.all(
+      servers
+        .filter((cfg) => cfg.enabled)
+        .map((cfg) => mgr.connectOne(cfg, log, connectTimeoutMs)),
+    );
     return mgr;
+  }
+
+  private async connectOne(
+    cfg: McpServerConfig,
+    log: (msg: string) => void,
+    connectTimeoutMs: number,
+  ): Promise<void> {
+    const transport = new StdioClientTransport({
+      command: cfg.command,
+      args: cfg.args,
+      env: { ...process.env, ...cfg.env } as Record<string, string>,
+    });
+    const client = new Client({ name: `praxis-${cfg.id}`, version: "0.1.0" }, { capabilities: {} });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        client.connect(transport),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`connect timed out after ${connectTimeoutMs}ms (needs auth?)`)),
+            connectTimeoutMs,
+          );
+        }),
+      ]);
+      this.connected.push({ id: cfg.id, client });
+      log(`MCP connected: ${cfg.id}`);
+    } catch (err) {
+      log(`MCP failed to connect (${cfg.id}): ${(err as Error).message}`);
+      // Tear down the stuck transport so its child process/browser wait doesn't linger.
+      void client.close().catch(() => {});
+      void transport.close().catch(() => {});
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async listTools(): Promise<ToolSpec[]> {
