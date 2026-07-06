@@ -136,6 +136,33 @@ export const SERVICE_REGISTRY: ServiceTemplate[] = [
     command: "npx",
     args: ["-y", "mcp-remote", "https://mcp.resend.com/mcp", "--header", "Authorization: Bearer ${RESEND_API_KEY}"],
   },
+  {
+    id: "higgsfield",
+    title: "Higgsfield",
+    requiredEnv: [],
+    command: "npx",
+    args: ["-y", "mcp-remote", "https://mcp.higgsfield.ai/mcp"],
+    auth: "oauth",
+    note: "Image/video/audio generation. Opens a browser once for OAuth. Enable from Connections.",
+  },
+  {
+    id: "revenuecat",
+    title: "RevenueCat",
+    requiredEnv: [],
+    command: "npx",
+    args: ["-y", "mcp-remote", "https://mcp.revenuecat.ai/mcp"],
+    auth: "oauth",
+    note: "Subscription/billing config + data. Opens a browser once for OAuth. Enable from Connections.",
+  },
+  {
+    id: "metaquest",
+    title: "Meta Quest (hzdb)",
+    requiredEnv: [],
+    command: "npx",
+    args: ["-y", "@meta-quest/hzdb", "mcp", "server"],
+    auth: "none",
+    note: "Local stdio server for Meta Quest agentic tools; no sign-in needed.",
+  },
 ];
 
 /** Cursor plugin folder names → registry ids (folders seen in ~/.cursor/plugins/cache). */
@@ -151,4 +178,8 @@ export const PLUGIN_TO_SERVICE: Record<string, string> = {
   firebase: "firebase",
   cloudflare: "cloudflare",
   resend: "resend",
+  higgsfield: "higgsfield",
+  revenuecat: "revenuecat",
+  "revenuecat-play-billing": "revenuecat",
+  "meta-quest-agentic-tools": "metaquest",
 };
