@@ -14,6 +14,7 @@ export const IPC = {
   statusUpdated: "praxis:statusUpdated",
   summon: "praxis:summon",
   turnStatus: "praxis:turnStatus",
+  turnSpeak: "praxis:turnSpeak",
   // Voice settings
   getVoices: "praxis:getVoices",
   setVoiceConfig: "praxis:setVoiceConfig",
@@ -32,6 +33,9 @@ export const IPC = {
   // Tool palette
   listTools: "praxis:listTools",
   runTool: "praxis:runTool",
+  // Token usage (per-project spend)
+  getUsage: "praxis:getUsage",
+  usageUpdated: "praxis:usageUpdated",
   // MCP connections (importer + connect cards)
   listMcpConnections: "praxis:listMcpConnections",
   saveMcpConnection: "praxis:saveMcpConnection",
@@ -76,6 +80,14 @@ export interface ProcessResult {
 export interface TurnStatusEvent {
   projectId?: string;
   detail: string;
+}
+
+/** Main → renderer (push): a short spoken progress line to play mid-turn, so
+ *  Praxis narrates what it's doing out loud, not just in the transcript. */
+export interface TurnSpeakEvent {
+  projectId?: string;
+  /** base64-encoded mp3 of the spoken status line. */
+  audioBase64: string;
 }
 
 export interface PraxisStatus {
@@ -237,6 +249,30 @@ export interface RunToolResult {
   isError: boolean;
 }
 
+/* ------------------------------ token usage ------------------------------- */
+
+/** Rolled-up token spend for one project (or the whole mesh) over the window. */
+export interface ProjectUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** input + output. */
+  totalTokens: number;
+  /** Estimated USD cost, priced per model. */
+  costUsd: number;
+  /** Number of turns attributed here. */
+  turns: number;
+}
+
+/** Live token-spend snapshot the renderer renders (mesh pill, index, panel). */
+export interface UsageSnapshot {
+  /** Rolling window the figures cover. */
+  windowDays: number;
+  /** Per-project rollup, keyed by project node id. */
+  byProject: Record<string, ProjectUsage>;
+  /** Mesh-wide total (includes turns not scoped to any repo). */
+  total: ProjectUsage;
+}
+
 /* ----------------------------- MCP connections ---------------------------- */
 
 /** A service the importer discovered (from Cursor config or plugin catalog). */
@@ -316,6 +352,8 @@ export interface PraxisBridge {
   /** Subscribe to global-hotkey summons; returns an unsubscribe fn. */
   onSummon(cb: () => void): () => void;
   onTurnStatus(cb: (e: TurnStatusEvent) => void): () => void;
+  /** Subscribe to mid-turn spoken progress lines (live narration). */
+  onTurnSpeak(cb: (e: TurnSpeakEvent) => void): () => void;
 
   /** List voices for a given (or already-saved) ElevenLabs key. */
   getVoices(apiKey?: string): Promise<VoiceOption[]>;
@@ -336,6 +374,11 @@ export interface PraxisBridge {
 
   listTools(): Promise<ToolInfo[]>;
   runTool(req: RunToolRequest): Promise<RunToolResult>;
+
+  /** Current per-project token spend over the rolling window. */
+  getUsage(): Promise<UsageSnapshot>;
+  /** Subscribe to usage updates (fires after each attributed turn). */
+  onUsageUpdated(cb: (u: UsageSnapshot) => void): () => void;
 
   listMcpConnections(): Promise<McpConnectionInfo[]>;
   saveMcpConnection(req: SaveMcpConnectionRequest): Promise<McpConnectionInfo[]>;

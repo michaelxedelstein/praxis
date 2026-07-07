@@ -16,6 +16,10 @@ export const BrainConfigSchema = z.object({
   maxToolRounds: z.number().int().positive().default(8),
   /** The name the persona addresses the user by. */
   userName: z.string().default("Michael"),
+  /** Deferential form of address (Jarvis-style), e.g. "Sir". */
+  honorific: z.string().default("Sir"),
+  /** Formal surname form of address, e.g. "Mr. Edelstein". */
+  formalName: z.string().default("Mr. Edelstein"),
   /** Default project used when the user doesn't name one for a task. */
   defaultProject: z.string().optional(),
 });

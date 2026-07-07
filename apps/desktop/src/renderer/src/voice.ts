@@ -238,3 +238,29 @@ export function playMp3Base64(base64: string): Promise<void> {
     void audio.play().catch(() => resolve());
   });
 }
+
+/**
+ * Sequential speech queue. Live status narration and the final reply are both
+ * pushed here so clips always play one after another in order, never on top of
+ * each other. `onActive` fires when playback starts/stops so the UI can reflect
+ * the "speaking" phase.
+ */
+let speechChain: Promise<void> = Promise.resolve();
+let speechDepth = 0;
+let onSpeechActive: ((active: boolean) => void) | null = null;
+
+export function setSpeechActiveHandler(cb: ((active: boolean) => void) | null): void {
+  onSpeechActive = cb;
+}
+
+export function queueSpeech(base64: string): Promise<void> {
+  speechDepth += 1;
+  onSpeechActive?.(true);
+  speechChain = speechChain
+    .then(() => playMp3Base64(base64))
+    .finally(() => {
+      speechDepth -= 1;
+      if (speechDepth === 0) onSpeechActive?.(false);
+    });
+  return speechChain;
+}

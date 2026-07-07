@@ -97,12 +97,23 @@ export class Brain {
     ];
 
     const messages: LlmMessage[] = [
-      ...history.map((m) => ({ role: m.role, content: m.content }) satisfies LlmMessage),
+      // Drop any empty history turns — a blank content string is also rejected
+      // by the API ("text content blocks must be non-empty").
+      ...history
+        .filter((m) => m.content.trim().length > 0)
+        .map((m) => ({ role: m.role, content: m.content }) satisfies LlmMessage),
       { role: "user", content: userText },
     ];
 
     const toolsUsed: string[] = [];
     let dispatched: DispatchResult | undefined;
+    // Accumulate token spend across every LLM call this turn makes.
+    const usage = { model, inputTokens: 0, outputTokens: 0 };
+    const tally = (u?: { inputTokens: number; outputTokens: number }): void => {
+      if (!u) return;
+      usage.inputTokens += u.inputTokens;
+      usage.outputTokens += u.outputTokens;
+    };
 
     for (let round = 0; round < this.config.maxToolRounds; round++) {
       emit(round === 0 ? "thinking" : "thinking (continuing)");
@@ -113,6 +124,7 @@ export class Brain {
         tools,
         maxTokens: this.config.maxTokens,
       });
+      tally(res.usage);
 
       const toolUses = res.content.filter(
         (b): b is { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } =>
@@ -131,11 +143,19 @@ export class Brain {
           intent: dispatched ? "task" : "chat",
           dispatched,
           toolsUsed,
+          usage,
         };
       }
 
-      // Record the assistant's tool-use turn verbatim so the thread stays valid.
-      messages.push({ role: "assistant", content: res.content });
+      // Record the assistant's tool-use turn so the thread stays valid. Newer
+      // Claude models can emit an EMPTY text block alongside tool_use; echoing
+      // that back trips Anthropic's "text content blocks must be non-empty"
+      // 400, so drop any empty/whitespace-only text blocks first (tool_use
+      // blocks are always kept).
+      const assistantContent = res.content.filter(
+        (b) => b.type !== "text" || b.text.trim().length > 0,
+      );
+      messages.push({ role: "assistant", content: assistantContent });
 
       // Execute each requested tool and collect results for the next round.
       const toolResults: LlmMessage["content"] = [];
@@ -199,6 +219,7 @@ export class Brain {
       tools: [],
       maxTokens: this.config.maxTokens,
     });
+    tally(finalRes.usage);
     const reply = finalRes.content
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text)
@@ -209,6 +230,7 @@ export class Brain {
       intent: dispatched ? "task" : "chat",
       dispatched,
       toolsUsed,
+      usage,
     };
   }
 

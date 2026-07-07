@@ -24,6 +24,7 @@ import { loadDesktopEnv, type DesktopEnv } from "./env.js";
 import { buildDesktopBrain, type DesktopBrain, type DispatchObserver } from "./brain.js";
 import { ProjectGraphService } from "./projects.js";
 import { TaskStore } from "./tasks.js";
+import { UsageStore } from "./usage.js";
 import { WindowManager } from "./windows.js";
 import { listConnections, saveConnection } from "./connections.js";
 import { saveUserEnv } from "./userEnv.js";
@@ -49,6 +50,7 @@ import {
   type SetVoiceConfigResult,
   type TaskRecord,
   type ToolInfo,
+  type UsageSnapshot,
   type VoiceOption,
   type WakeCheckRequest,
   type WakeCheckResult,
@@ -58,6 +60,7 @@ let env: DesktopEnv;
 let desktop: DesktopBrain | null = null;
 let graph: ProjectGraphService;
 let tasks: TaskStore;
+let usage: UsageStore;
 let windows: WindowManager;
 
 /** Per-project conversation histories (keyed by node id; "" = global HUD). */
@@ -126,13 +129,40 @@ async function handleProcessAudio(
 
 /* -------------------------------- wake word -------------------------------- */
 
-/** Natural wake phrases (normalized: lowercase, no punctuation). Kept loose so
- *  "hey jarvis wake up", "ok jarvis", "praxis you up?" all land. */
-const WAKE_WORDS = ["jarvis", "praxis", "computer wake up"];
+/** Natural wake words, plus the ways speech-to-text commonly MIS-hears the two
+ *  unusual names. "Praxis" in particular gets transcribed as "practice",
+ *  "proxies", "prax is", etc., and "Jarvis" as "jervis"/"service" — so we match
+ *  those homophones too. Kept loose so "hey praxis wake up", "ok jarvis",
+ *  "praxis you up?" all land. */
+const WAKE_WORDS = [
+  "praxis", "prax is", "praxus", "praxes", "praxton", "practice", "proxies", "praxis", "pixis",
+  "jarvis", "jervis", "jarvus", "jarvez", "gervis",
+  "computer wake up", "hey computer",
+];
+
+/** Levenshtein distance, capped-friendly (small strings only). */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0]![j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + cost);
+    }
+  }
+  return dp[m]![n]!;
+}
 
 function containsWakeWord(text: string): boolean {
   const norm = text.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
-  return WAKE_WORDS.some((w) => norm.includes(w));
+  if (!norm) return false;
+  if (WAKE_WORDS.some((w) => norm.includes(w))) return true;
+  // Fuzzy: any single word close to "praxis"/"jarvis" (catches novel mishearings).
+  return norm
+    .split(" ")
+    .some((tok) => tok.length >= 4 && (editDistance(tok, "praxis") <= 2 || editDistance(tok, "jarvis") <= 2));
 }
 
 /** Transcribe a short ambient clip and decide whether it contains a wake
@@ -161,6 +191,43 @@ async function handleWakeCheck(
   return { woke, heard };
 }
 
+/** A friendly service name for a namespaced tool ("github__search…" → "GitHub"). */
+function friendlyTool(name: string): string {
+  const svc = (name.split("__")[0] ?? name).replace(/^(mcp[_-]?)/, "");
+  const known: Record<string, string> = {
+    github: "GitHub",
+    slack: "Slack",
+    stripe: "Stripe",
+    supabase: "Supabase",
+    firebase: "Firebase",
+    cloudflare: "Cloudflare",
+    sentry: "Sentry",
+    vercel: "Vercel",
+    linear: "Linear",
+    higgsfield: "Higgsfield",
+    revenuecat: "RevenueCat",
+    runway: "Runway",
+    mac: "your Mac",
+  };
+  return known[svc] ?? svc.replace(/[_-]+/g, " ");
+}
+
+/** Turn an internal status detail into { text for the bubble, speech to say }.
+ *  `speech` is null when the milestone isn't worth interrupting to voice. */
+function humanizeStatus(detail: string): { text: string; speech: string | null } {
+  if (detail === "thinking") return { text: "Thinking…", speech: "One moment, Sir — let me look into that." };
+  if (detail.startsWith("thinking")) return { text: "Still working…", speech: null };
+  if (detail === "dispatching task")
+    return { text: "Dispatching the task…", speech: "Dispatching that to your machine now, Sir." };
+  if (detail === "wrapping up") return { text: "Wrapping up…", speech: null };
+  const tool = detail.match(/^(?:calling tool|running): (.+)$/)?.[1];
+  if (tool) {
+    const svc = friendlyTool(tool);
+    return { text: `Consulting ${svc}…`, speech: `Checking ${svc} now, Sir.` };
+  }
+  return { text: detail, speech: null };
+}
+
 async function runTurnAndSpeak(
   userText: string,
   heard: string,
@@ -178,12 +245,37 @@ async function runTurnAndSpeak(
   const history = historyFor(projectId);
   const context = projectId ? await buildProjectContext(projectId) : undefined;
 
+  // Live narration: speak a few courteous progress lines mid-turn (deduped and
+  // capped so it stays tasteful and never overlaps the final reply oddly).
+  const spokenPhrases = new Set<string>();
+  const MAX_SPOKEN = 4;
+  const speakStatus = (phrase: string): void => {
+    if (!desktop?.eleven || !desktop.voiceId) return;
+    if (spokenPhrases.has(phrase) || spokenPhrases.size >= MAX_SPOKEN) return;
+    spokenPhrases.add(phrase);
+    void desktop.eleven
+      .synthesize({ text: phrase })
+      .then((buf) =>
+        windows.broadcast(IPC.turnSpeak, {
+          projectId,
+          audioBase64: Buffer.from(buf).toString("base64"),
+        }),
+      )
+      .catch(() => {});
+  };
+
   const result = await desktop.brain.runTurn({
     history,
     userText,
     context,
-    onStatus: (detail) => windows.broadcast(IPC.turnStatus, { projectId, detail }),
+    onStatus: (detail) => {
+      const { text, speech } = humanizeStatus(detail);
+      windows.broadcast(IPC.turnStatus, { projectId, detail: text });
+      if (speech) speakStatus(speech);
+    },
   });
+  // Account the real token spend against the focused repo (or the global bucket).
+  if (result.usage) usage.record(result.usage, projectId);
   history.push({ role: "user", content: userText });
   history.push({ role: "assistant", content: result.reply });
 
@@ -401,6 +493,8 @@ function registerIpc(): void {
     return desktop.mcp.callTool(req.name, req.args);
   });
 
+  ipcMain.handle(IPC.getUsage, async (): Promise<UsageSnapshot> => usage.snapshot());
+
   ipcMain.handle(IPC.listMcpConnections, (): Promise<McpConnectionInfo[]> =>
     listConnections({ projectRoots: env.projectRoots }),
   );
@@ -456,6 +550,9 @@ app.whenReady().then(async () => {
   tasks = new TaskStore();
   tasks.onChange((t) => windows.broadcast(IPC.tasksUpdated, t));
 
+  usage = new UsageStore();
+  usage.onChange((u) => windows.broadcast(IPC.usageUpdated, u));
+
   graph = new ProjectGraphService({
     roots: env.projectRoots,
     githubToken: env.githubToken,
@@ -478,6 +575,7 @@ app.whenReady().then(async () => {
       observer,
       onSpawn: spawnAgents,
       confirm: requestConfirm,
+      onUsage: (u, projectId) => usage.record(u, projectId),
       projectRoots: env.projectRoots,
       log: (m) => console.log("[brain]", m),
     });

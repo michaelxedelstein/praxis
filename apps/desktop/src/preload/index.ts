@@ -22,6 +22,8 @@ import {
   type SetVoiceConfigRequest,
   type TaskRecord,
   type TurnStatusEvent,
+  type TurnSpeakEvent,
+  type UsageSnapshot,
   type WakeCheckRequest,
 } from "../shared/ipc.js";
 
@@ -38,6 +40,7 @@ const api: PraxisBridge = {
   onStatusUpdated: (cb: (s: PraxisStatus) => void) => subscribe(IPC.statusUpdated, cb),
   onSummon: (cb: () => void) => subscribe<void>(IPC.summon, () => cb()),
   onTurnStatus: (cb: (e: TurnStatusEvent) => void) => subscribe(IPC.turnStatus, cb),
+  onTurnSpeak: (cb: (e: TurnSpeakEvent) => void) => subscribe(IPC.turnSpeak, cb),
 
   getVoices: (apiKey?: string) => ipcRenderer.invoke(IPC.getVoices, apiKey),
   setVoiceConfig: (req: SetVoiceConfigRequest) => ipcRenderer.invoke(IPC.setVoiceConfig, req),
@@ -55,6 +58,9 @@ const api: PraxisBridge = {
 
   listTools: () => ipcRenderer.invoke(IPC.listTools),
   runTool: (req: RunToolRequest) => ipcRenderer.invoke(IPC.runTool, req),
+
+  getUsage: () => ipcRenderer.invoke(IPC.getUsage),
+  onUsageUpdated: (cb: (u: UsageSnapshot) => void) => subscribe(IPC.usageUpdated, cb),
 
   listMcpConnections: () => ipcRenderer.invoke(IPC.listMcpConnections),
   saveMcpConnection: (req: SaveMcpConnectionRequest) => ipcRenderer.invoke(IPC.saveMcpConnection, req),
