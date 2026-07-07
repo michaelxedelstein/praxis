@@ -7,9 +7,9 @@ import { z } from "zod";
 
 export const BrainConfigSchema = z.object({
   /** High-reasoning model for autonomous tool-chaining loops (Opus-class). */
-  reasoningModel: z.string().default("claude-opus-4-20250514"),
+  reasoningModel: z.string().default("claude-opus-4-8"),
   /** Faster model for quick conversational turns (Sonnet-class). */
-  chatModel: z.string().default("claude-sonnet-4-20250514"),
+  chatModel: z.string().default("claude-sonnet-5"),
   /** Max tokens per LLM response. */
   maxTokens: z.number().int().positive().default(2048),
   /** Hard cap on tool-execution rounds before forcing a final answer. */
